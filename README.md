@@ -120,10 +120,9 @@ us
 eu
 asia
 # Multi-level subdomains (full domain names)
-gitea.earth.s10r.de
 api.v2.example.com
 ```
 
-**Note**: You can include both simple subdomains (like `app1`) and full multi-level domain names (like `gitea.earth.s10r.de`). The script automatically detects and handles both types.
+**Note**: You can include both simple subdomains (like `app1`) and full multi-level domain names (like `www.home.example.com`). The script automatically detects and handles both types.
 
 Perfect for documenting your current DNS setup before transferring domains!
