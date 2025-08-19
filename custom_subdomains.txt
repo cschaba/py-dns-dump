@@ -1,0 +1,67 @@
+# Custom subdomain list for DNS scanning
+# One subdomain per line, comments start with #
+
+# Additional web services
+app1
+app2
+dashboard
+panel
+control
+manage
+www2
+www3
+
+# Additional mail services
+autoconfig
+autodiscover
+exchange
+owa
+
+# Additional development environments
+prod
+production
+qa
+uat
+sandbox
+
+# Additional infrastructure
+backup
+monitor
+stats
+analytics
+logs
+cockpit
+
+# Company specific
+intranet
+extranet
+partner
+client
+vendor
+
+# Additional security
+sso
+auth
+oauth
+ldap
+
+# Additional file services
+share
+sync
+cloud
+drive
+wolke
+nextcloud
+nc
+share
+box
+
+# Regional or language specific
+en
+de
+fr
+es
+jp
+us
+eu
+asia

@@ -26,6 +26,65 @@ class DNSDumper:
             'app', 'secure', 'vpn', 'remote', 'portal', 'login',
             'cpanel', 'whm', 'ns1', 'ns2', 'mx1', 'mx2'
         ]
+    
+    def load_custom_subdomains(self, filename: str) -> List[str]:
+        """Load custom subdomains from a file"""
+        custom_subdomains = []
+        try:
+            with open(filename, 'r', encoding='utf-8') as f:
+                for line in f:
+                    subdomain = line.strip()
+                    # Skip empty lines and comments
+                    if subdomain and not subdomain.startswith('#'):
+                        custom_subdomains.append(subdomain)
+            print(f"Loaded {len(custom_subdomains)} custom subdomains from {filename}")
+        except FileNotFoundError:
+            print(f"Warning: Custom subdomain file '{filename}' not found. Using default list only.")
+        except Exception as e:
+            print(f"Error reading subdomain file '{filename}': {e}")
+        return custom_subdomains
+    
+    def get_subdomain_list(self, custom_file: Optional[str] = None, target_domain: str = None) -> tuple[List[str], List[str]]:
+        """Get the complete list of subdomains to check and full domains to check"""
+        subdomains = self.common_subdomains.copy()
+        full_domains = []
+        
+        if custom_file:
+            custom_subdomains = self.load_custom_subdomains(custom_file)
+            # Separate regular subdomains from full domain names
+            added_count = 0
+            full_domain_count = 0
+            
+            for item in custom_subdomains:
+                # Check if it's a full domain (contains dots)
+                if '.' in item:
+                    # If it ends with the target domain, it's a multi-level subdomain
+                    if target_domain and item.endswith('.' + target_domain):
+                        full_domains.append(item)
+                        full_domain_count += 1
+                    # If it doesn't contain the target domain at all, it's a completely different domain
+                    elif target_domain and target_domain not in item:
+                        full_domains.append(item)
+                        full_domain_count += 1
+                    # If it contains the target domain but doesn't end with it, it's also a full domain
+                    elif target_domain and target_domain in item and not item.endswith(target_domain):
+                        full_domains.append(item)
+                        full_domain_count += 1
+                    else:
+                        # It's just a regular subdomain with dots
+                        if item not in subdomains:
+                            subdomains.append(item)
+                            added_count += 1
+                elif item not in subdomains:
+                    subdomains.append(item)
+                    added_count += 1
+            
+            print(f"Added {added_count} new subdomains and {full_domain_count} full domains from custom list")
+            print(f"Total: {len(subdomains)} subdomains, {len(full_domains)} full domains")
+        else:
+            print(f"Using built-in subdomain list ({len(subdomains)} subdomains)")
+        
+        return subdomains, full_domains
         
     def run_dig_command(self, domain: str, record_type: str) -> Optional[str]:
         """Run dig command and return output"""
@@ -49,7 +108,7 @@ class DNSDumper:
             pass
         return None
 
-    def extract_dns_records(self, domain: str, include_subdomains: bool = True) -> Dict:
+    def extract_dns_records(self, domain: str, include_subdomains: bool = True, custom_subdomain_file: Optional[str] = None) -> Dict:
         """Extract all DNS records for a domain and its subdomains"""
         records = {
             'domain': domain,
@@ -88,7 +147,11 @@ class DNSDumper:
             print(f"\n--- Checking subdomains ---")
             subdomain_count = 0
             
-            for subdomain in self.common_subdomains:
+            # Get the complete list of subdomains and full domains to check
+            subdomains_to_check, full_domains_to_check = self.get_subdomain_list(custom_subdomain_file, domain)
+            
+            # Check regular subdomains
+            for subdomain in subdomains_to_check:
                 full_subdomain = f"{subdomain}.{domain}"
                 subdomain_records = {}
                 has_records = False
@@ -109,7 +172,28 @@ class DNSDumper:
                     subdomain_count += 1
                     print(f"  Found records for: {full_subdomain}")
             
-            print(f"  Total subdomains with records: {subdomain_count}")
+            # Check full domains from custom list
+            for full_domain in full_domains_to_check:
+                subdomain_records = {}
+                has_records = False
+                
+                # Check A, AAAA, and CNAME for full domains
+                for record_type in ['A', 'AAAA', 'CNAME']:
+                    short_result = self.run_dig_command(full_domain, record_type)
+                    
+                    if short_result:
+                        subdomain_records[record_type] = {
+                            'values': short_result.split('\n'),
+                            'count': len(short_result.split('\n'))
+                        }
+                        has_records = True
+                
+                if has_records:
+                    records['subdomains'][full_domain] = subdomain_records
+                    subdomain_count += 1
+                    print(f"  Found records for: {full_domain}")
+            
+            print(f"  Total domains/subdomains with records: {subdomain_count}")
         
         return records
 
@@ -184,6 +268,8 @@ def main():
                        help='Suppress progress output')
     parser.add_argument('--no-subdomains', action='store_true',
                        help='Skip subdomain scanning')
+    parser.add_argument('--subdomain-list', metavar='FILE',
+                       help='Load additional subdomains from file (one per line)')
     
     args = parser.parse_args()
     
@@ -197,7 +283,11 @@ def main():
     dumper = DNSDumper()
     
     # Extract DNS records
-    dns_data = dumper.extract_dns_records(args.domain, include_subdomains=not args.no_subdomains)
+    dns_data = dumper.extract_dns_records(
+        args.domain, 
+        include_subdomains=not args.no_subdomains,
+        custom_subdomain_file=args.subdomain_list
+    )
     
     # Output results
     if not args.quiet:

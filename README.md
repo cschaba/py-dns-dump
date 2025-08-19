@@ -39,6 +39,16 @@ python3 dns_dumper.py example.com --quiet --json records.json
 python3 dns_dumper.py example.com --no-subdomains
 ```
 
+### Use custom subdomain list:
+```bash
+python3 dns_dumper.py example.com --subdomain-list custom_subdomains.txt
+```
+
+### Combine built-in and custom subdomains:
+```bash
+python3 dns_dumper.py example.com --subdomain-list my_subdomains.txt --csv complete_scan.csv
+```
+
 ## What it extracts
 
 ### Main Domain Records
@@ -72,5 +82,31 @@ Automatically checks these common subdomains for A, AAAA, and CNAME records:
 - **Text**: Human-readable console output
 - **CSV**: Spreadsheet-compatible format
 - **JSON**: Machine-readable structured data
+
+## Custom Subdomain Lists
+
+You can provide your own list of subdomains to scan using the `--subdomain-list` option:
+
+1. Create a text file with one subdomain per line
+2. Use `#` for comments
+3. Empty lines are ignored
+4. Custom subdomains are added to the built-in list (no duplicates)
+
+**Example custom_subdomains.txt:**
+```
+# My company's subdomains
+app1
+app2
+dashboard
+# Regional sites
+us
+eu
+asia
+# Multi-level subdomains (full domain names)
+gitea.earth.s10r.de
+api.v2.example.com
+```
+
+**Note**: You can include both simple subdomains (like `app1`) and full multi-level domain names (like `gitea.earth.s10r.de`). The script automatically detects and handles both types.
 
 Perfect for documenting your current DNS setup before transferring domains!
