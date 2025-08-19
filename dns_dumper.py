@@ -17,7 +17,8 @@ class DNSDumper:
             'A', 'AAAA', 'CNAME', 'MX', 'NS', 'TXT', 'SOA', 
             'PTR', 'SRV', 'CAA', 'DNSKEY', 'DS'
         ]
-        self.common_subdomains = [
+        # Standard web and service subdomains
+        self.standard_subdomains = [
             'www', 'mail', 'ftp', 'smtp', 'pop', 'imap', 'webmail',
             'admin', 'blog', 'shop', 'store', 'api', 'cdn', 'static',
             'img', 'images', 'assets', 'files', 'download', 'uploads',
@@ -26,6 +27,79 @@ class DNSDumper:
             'app', 'secure', 'vpn', 'remote', 'portal', 'login',
             'cpanel', 'whm', 'ns1', 'ns2', 'mx1', 'mx2'
         ]
+        
+        # RFC-defined service discovery subdomains (underscore prefixed)
+        self.rfc_subdomains = [
+            # Email and messaging (RFC 6186, RFC 8314)
+            '_submission._tcp', '_submissions._tcp', '_imap._tcp', '_imaps._tcp',
+            '_pop3._tcp', '_pop3s._tcp', '_smtp._tcp', '_smtps._tcp',
+            
+            # SIP and VoIP (RFC 3263, RFC 5630)
+            '_sip._tcp', '_sip._udp', '_sips._tcp', '_sips._udp',
+            
+            # XMPP/Jabber (RFC 6120)
+            '_xmpp-client._tcp', '_xmpp-server._tcp', '_xmpps-client._tcp', '_xmpps-server._tcp',
+            
+            # HTTP services (RFC 2782, RFC 6763)
+            '_http._tcp', '_https._tcp',
+            
+            # FTP services
+            '_ftp._tcp', '_ftps._tcp',
+            
+            # LDAP services (RFC 2782)
+            '_ldap._tcp', '_ldaps._tcp',
+            
+            # Kerberos (RFC 4120)
+            '_kerberos._tcp', '_kerberos._udp', '_kpasswd._tcp', '_kpasswd._udp',
+            
+            # DNS services
+            '_dns._tcp', '_dns._udp',
+            
+            # NTP (Network Time Protocol)
+            '_ntp._udp',
+            
+            # CalDAV and CardDAV (RFC 6764)
+            '_caldav._tcp', '_caldavs._tcp', '_carddav._tcp', '_carddavs._tcp',
+            
+            # WebDAV
+            '_webdav._tcp', '_webdavs._tcp',
+            
+            # SSH and SFTP
+            '_ssh._tcp', '_sftp._tcp',
+            
+            # Matrix protocol
+            '_matrix._tcp', '_matrix-fed._tcp',
+            
+            # Minecraft
+            '_minecraft._tcp',
+            
+            # TeamSpeak
+            '_ts3._udp',
+            
+            # Common email security and configuration records
+            '_dmarc', '_domainkey', '_adsp._domainkey',
+            
+            # SPF and email authentication
+            '_spf',
+            
+            # Microsoft/Office 365 specific
+            '_autodiscover._tcp', '_sip._tls',
+            
+            # Apple specific
+            '_apple-challenge',
+            
+            # Google specific
+            '_google-site-verification',
+            
+            # Certificate Authority Authorization related
+            '_caa',
+            
+            # ACME challenge (Let's Encrypt)
+            '_acme-challenge'
+        ]
+        
+        # Combined list (for backward compatibility)
+        self.common_subdomains = self.standard_subdomains + self.rfc_subdomains
     
     def load_custom_subdomains(self, filename: str) -> List[str]:
         """Load custom subdomains from a file"""
@@ -44,9 +118,15 @@ class DNSDumper:
             print(f"Error reading subdomain file '{filename}': {e}")
         return custom_subdomains
     
-    def get_subdomain_list(self, custom_file: Optional[str] = None, target_domain: str = None) -> tuple[List[str], List[str]]:
+    def get_subdomain_list(self, custom_file: Optional[str] = None, target_domain: str = None, skip_rfc: bool = False) -> tuple[List[str], List[str]]:
         """Get the complete list of subdomains to check and full domains to check"""
-        subdomains = self.common_subdomains.copy()
+        # Choose which subdomains to include
+        if skip_rfc:
+            subdomains = self.standard_subdomains.copy()
+            print(f"Skipping RFC subdomains (using {len(subdomains)} standard subdomains)")
+        else:
+            subdomains = self.common_subdomains.copy()
+        
         full_domains = []
         
         if custom_file:
@@ -89,12 +169,16 @@ class DNSDumper:
     def run_dig_command(self, domain: str, record_type: str) -> Optional[str]:
         """Run dig command and return output"""
         try:
-            cmd = ['dig', '+short', f'@8.8.8.8', domain, record_type]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            # Use faster dig options: +short, +time=2, +tries=1
+            cmd = ['dig', '+short', '+time=2', '+tries=1', f'@8.8.8.8', domain, record_type]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
             if result.returncode == 0 and result.stdout.strip():
                 return result.stdout.strip()
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            print(f"Error running dig for {record_type}: {e}", file=sys.stderr)
+        except subprocess.TimeoutExpired:
+            # Silently skip timeouts to avoid spam
+            pass
+        except FileNotFoundError as e:
+            print(f"Error: dig command not found: {e}", file=sys.stderr)
         return None
     
     def get_detailed_record(self, domain: str, record_type: str) -> Optional[str]:
@@ -108,7 +192,7 @@ class DNSDumper:
             pass
         return None
 
-    def extract_dns_records(self, domain: str, include_subdomains: bool = True, custom_subdomain_file: Optional[str] = None) -> Dict:
+    def extract_dns_records(self, domain: str, include_subdomains: bool = True, custom_subdomain_file: Optional[str] = None, skip_rfc_subdomains: bool = False) -> Dict:
         """Extract all DNS records for a domain and its subdomains"""
         records = {
             'domain': domain,
@@ -148,10 +232,11 @@ class DNSDumper:
             subdomain_count = 0
             
             # Get the complete list of subdomains and full domains to check
-            subdomains_to_check, full_domains_to_check = self.get_subdomain_list(custom_subdomain_file, domain)
+            subdomains_to_check, full_domains_to_check = self.get_subdomain_list(custom_subdomain_file, domain, skip_rfc_subdomains)
             
             # Check regular subdomains
-            for subdomain in subdomains_to_check:
+            total_to_check = len(subdomains_to_check)
+            for i, subdomain in enumerate(subdomains_to_check, 1):
                 full_subdomain = f"{subdomain}.{domain}"
                 subdomain_records = {}
                 has_records = False
@@ -171,6 +256,10 @@ class DNSDumper:
                     records['subdomains'][full_subdomain] = subdomain_records
                     subdomain_count += 1
                     print(f"  Found records for: {full_subdomain}")
+                
+                # Show progress every 10 subdomains
+                if i % 10 == 0:
+                    print(f"  Progress: {i}/{total_to_check} subdomains checked...")
             
             # Check full domains from custom list
             for full_domain in full_domains_to_check:
@@ -270,6 +359,8 @@ def main():
                        help='Skip subdomain scanning')
     parser.add_argument('--subdomain-list', metavar='FILE',
                        help='Load additional subdomains from file (one per line)')
+    parser.add_argument('--skip-rfc-subdomains', action='store_true',
+                       help='Skip RFC-defined underscore subdomains (faster scanning)')
     
     args = parser.parse_args()
     
@@ -286,7 +377,8 @@ def main():
     dns_data = dumper.extract_dns_records(
         args.domain, 
         include_subdomains=not args.no_subdomains,
-        custom_subdomain_file=args.subdomain_list
+        custom_subdomain_file=args.subdomain_list,
+        skip_rfc_subdomains=args.skip_rfc_subdomains
     )
     
     # Output results

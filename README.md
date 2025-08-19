@@ -44,6 +44,11 @@ python3 dns_dumper.py example.com --no-subdomains
 python3 dns_dumper.py example.com --subdomain-list custom_subdomains.txt
 ```
 
+### Fast scanning (skip RFC subdomains):
+```bash
+python3 dns_dumper.py example.com --skip-rfc-subdomains
+```
+
 ### Combine built-in and custom subdomains:
 ```bash
 python3 dns_dumper.py example.com --subdomain-list my_subdomains.txt --csv complete_scan.csv
@@ -68,6 +73,8 @@ The script queries for these DNS record types:
 
 ### Subdomain Records
 Automatically checks these common subdomains for A, AAAA, and CNAME records:
+
+**Standard Subdomains:**
 - **Web**: www, blog, shop, store, api, cdn, static, img, images, assets
 - **Mail**: mail, smtp, pop, imap, webmail, mx1, mx2
 - **File Services**: ftp, files, download, uploads
@@ -76,6 +83,16 @@ Automatically checks these common subdomains for A, AAAA, and CNAME records:
 - **Admin**: admin, cpanel, whm, portal, login, secure
 - **Infrastructure**: ns1, ns2, vpn, remote
 - **Mobile**: mobile, app
+
+**RFC-Defined Service Discovery Subdomains:**
+- **Email Services**: _submission._tcp, _submissions._tcp, _imap._tcp, _imaps._tcp, _pop3._tcp, _pop3s._tcp, _smtp._tcp, _smtps._tcp
+- **SIP/VoIP**: _sip._tcp, _sip._udp, _sips._tcp, _sips._udp
+- **XMPP/Jabber**: _xmpp-client._tcp, _xmpp-server._tcp, _xmpps-client._tcp, _xmpps-server._tcp
+- **Web Services**: _http._tcp, _https._tcp, _caldav._tcp, _carddav._tcp, _webdav._tcp
+- **Directory Services**: _ldap._tcp, _ldaps._tcp
+- **Authentication**: _kerberos._tcp, _kerberos._udp, _kpasswd._tcp, _kpasswd._udp
+- **Security Records**: _dmarc, _domainkey, _adsp._domainkey, _spf, _caa, _acme-challenge
+- **Other Services**: _dns._tcp, _ntp._udp, _ssh._tcp, _sftp._tcp, _matrix._tcp, _minecraft._tcp
 
 ## Output formats
 
