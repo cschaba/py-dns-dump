@@ -8,6 +8,8 @@ import json
 import csv
 import sys
 import subprocess
+import asyncio
+import concurrent.futures
 from typing import Dict, List, Optional
 from datetime import datetime
 
@@ -181,6 +183,15 @@ class DNSDumper:
             print(f"Error: dig command not found: {e}", file=sys.stderr)
         return None
     
+    async def run_dig_command_async(self, domain: str, record_type: str, executor) -> tuple[str, str, Optional[str]]:
+        """Run dig command asynchronously and return domain, record_type, and result"""
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(executor, self.run_dig_command, domain, record_type)
+            return domain, record_type, result
+        except Exception:
+            return domain, record_type, None
+    
     def get_detailed_record(self, domain: str, record_type: str) -> Optional[str]:
         """Get detailed record information"""
         try:
@@ -192,8 +203,8 @@ class DNSDumper:
             pass
         return None
 
-    def extract_dns_records(self, domain: str, include_subdomains: bool = True, custom_subdomain_file: Optional[str] = None, skip_rfc_subdomains: bool = False) -> Dict:
-        """Extract all DNS records for a domain and its subdomains"""
+    async def extract_dns_records_async(self, domain: str, include_subdomains: bool = True, custom_subdomain_file: Optional[str] = None, skip_rfc_subdomains: bool = False, max_workers: int = 20) -> Dict:
+        """Extract all DNS records for a domain and its subdomains using parallel requests"""
         records = {
             'domain': domain,
             'timestamp': datetime.now().isoformat(),
@@ -201,90 +212,105 @@ class DNSDumper:
             'subdomains': {}
         }
         
-        print(f"Extracting DNS records for: {domain}")
+        print(f"Extracting DNS records for: {domain} (using {max_workers} parallel workers)")
         
-        # Extract records for main domain
-        print(f"\n--- Main domain: {domain} ---")
-        for record_type in self.common_record_types:
-            print(f"  Checking {record_type} records...", end='')
+        # Create thread pool executor for parallel DNS queries
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             
-            # Get short format
-            short_result = self.run_dig_command(domain, record_type)
+            # Extract records for main domain
+            print(f"\n--- Main domain: {domain} ---")
+            main_domain_tasks = []
             
-            if short_result:
-                records['records'][record_type] = {
-                    'values': short_result.split('\n'),
-                    'count': len(short_result.split('\n'))
-                }
-                print(f" Found {len(short_result.split('\n'))} record(s)")
-                
-                # Get detailed format for important records
-                if record_type in ['SOA', 'NS', 'MX']:
-                    detailed = self.get_detailed_record(domain, record_type)
-                    if detailed:
-                        records['records'][record_type]['detailed'] = detailed
-            else:
-                print(" None found")
-        
-        # Extract records for subdomains
-        if include_subdomains:
-            print(f"\n--- Checking subdomains ---")
-            subdomain_count = 0
+            for record_type in self.common_record_types:
+                task = self.run_dig_command_async(domain, record_type, executor)
+                main_domain_tasks.append(task)
             
-            # Get the complete list of subdomains and full domains to check
-            subdomains_to_check, full_domains_to_check = self.get_subdomain_list(custom_subdomain_file, domain, skip_rfc_subdomains)
+            # Execute all main domain queries in parallel
+            main_results = await asyncio.gather(*main_domain_tasks)
             
-            # Check regular subdomains
-            total_to_check = len(subdomains_to_check)
-            for i, subdomain in enumerate(subdomains_to_check, 1):
-                full_subdomain = f"{subdomain}.{domain}"
-                subdomain_records = {}
-                has_records = False
-                
-                # Only check A, AAAA, and CNAME for subdomains (most relevant)
-                for record_type in ['A', 'AAAA', 'CNAME']:
-                    short_result = self.run_dig_command(full_subdomain, record_type)
+            # Process main domain results
+            for domain_name, record_type, result in main_results:
+                if result:
+                    records['records'][record_type] = {
+                        'values': result.split('\n'),
+                        'count': len(result.split('\n'))
+                    }
+                    print(f"  Found {len(result.split('\n'))} {record_type} record(s)")
                     
-                    if short_result:
-                        subdomain_records[record_type] = {
-                            'values': short_result.split('\n'),
-                            'count': len(short_result.split('\n'))
-                        }
-                        has_records = True
-                
-                if has_records:
-                    records['subdomains'][full_subdomain] = subdomain_records
-                    subdomain_count += 1
-                    print(f"  Found records for: {full_subdomain}")
-                
-                # Show progress every 10 subdomains
-                if i % 10 == 0:
-                    print(f"  Progress: {i}/{total_to_check} subdomains checked...")
+                    # Get detailed format for important records
+                    if record_type in ['SOA', 'NS', 'MX']:
+                        detailed = self.get_detailed_record(domain_name, record_type)
+                        if detailed:
+                            records['records'][record_type]['detailed'] = detailed
+                else:
+                    print(f"  No {record_type} records found")
             
-            # Check full domains from custom list
-            for full_domain in full_domains_to_check:
-                subdomain_records = {}
-                has_records = False
+            # Extract records for subdomains
+            if include_subdomains:
+                print(f"\n--- Checking subdomains (parallel) ---")
                 
-                # Check A, AAAA, and CNAME for full domains
-                for record_type in ['A', 'AAAA', 'CNAME']:
-                    short_result = self.run_dig_command(full_domain, record_type)
+                # Get the complete list of subdomains and full domains to check
+                subdomains_to_check, full_domains_to_check = self.get_subdomain_list(custom_subdomain_file, domain, skip_rfc_subdomains)
+                
+                # Prepare all subdomain queries
+                subdomain_tasks = []
+                
+                # Regular subdomains
+                for subdomain in subdomains_to_check:
+                    full_subdomain = f"{subdomain}.{domain}"
+                    for record_type in ['A', 'AAAA', 'CNAME']:
+                        task = self.run_dig_command_async(full_subdomain, record_type, executor)
+                        subdomain_tasks.append(task)
+                
+                # Full domains from custom list
+                for full_domain in full_domains_to_check:
+                    for record_type in ['A', 'AAAA', 'CNAME']:
+                        task = self.run_dig_command_async(full_domain, record_type, executor)
+                        subdomain_tasks.append(task)
+                
+                total_queries = len(subdomain_tasks)
+                print(f"  Running {total_queries} parallel DNS queries...")
+                
+                # Execute all subdomain queries in parallel with progress updates
+                batch_size = 50  # Process in batches to show progress
+                subdomain_count = 0
+                
+                for i in range(0, len(subdomain_tasks), batch_size):
+                    batch = subdomain_tasks[i:i + batch_size]
+                    batch_results = await asyncio.gather(*batch)
                     
-                    if short_result:
-                        subdomain_records[record_type] = {
-                            'values': short_result.split('\n'),
-                            'count': len(short_result.split('\n'))
-                        }
-                        has_records = True
+                    # Process batch results
+                    for domain_name, record_type, result in batch_results:
+                        if result:
+                            if domain_name not in records['subdomains']:
+                                records['subdomains'][domain_name] = {}
+                            
+                            records['subdomains'][domain_name][record_type] = {
+                                'values': result.split('\n'),
+                                'count': len(result.split('\n'))
+                            }
+                    
+                    # Show progress
+                    completed = min(i + batch_size, len(subdomain_tasks))
+                    print(f"  Progress: {completed}/{total_queries} queries completed...")
                 
-                if has_records:
-                    records['subdomains'][full_domain] = subdomain_records
-                    subdomain_count += 1
-                    print(f"  Found records for: {full_domain}")
-            
-            print(f"  Total domains/subdomains with records: {subdomain_count}")
+                # Count subdomains with records and clean up empty entries
+                domains_with_records = {}
+                for domain_name, domain_records in records['subdomains'].items():
+                    if domain_records:  # Only keep domains that have records
+                        domains_with_records[domain_name] = domain_records
+                        if subdomain_count == 0 or len(domains_with_records) > subdomain_count:
+                            print(f"  Found records for: {domain_name}")
+                        subdomain_count = len(domains_with_records)
+                
+                records['subdomains'] = domains_with_records
+                print(f"  Total domains/subdomains with records: {subdomain_count}")
         
         return records
+    
+    def extract_dns_records(self, domain: str, include_subdomains: bool = True, custom_subdomain_file: Optional[str] = None, skip_rfc_subdomains: bool = False, max_workers: int = 20) -> Dict:
+        """Extract all DNS records for a domain and its subdomains (wrapper for async version)"""
+        return asyncio.run(self.extract_dns_records_async(domain, include_subdomains, custom_subdomain_file, skip_rfc_subdomains, max_workers))
 
     def output_text(self, data: Dict):
         """Output in human-readable text format"""
@@ -361,6 +387,8 @@ def main():
                        help='Load additional subdomains from file (one per line)')
     parser.add_argument('--skip-rfc-subdomains', action='store_true',
                        help='Skip RFC-defined underscore subdomains (faster scanning)')
+    parser.add_argument('--max-workers', type=int, default=20, metavar='N',
+                       help='Maximum number of parallel DNS queries (default: 20)')
     
     args = parser.parse_args()
     
@@ -378,7 +406,8 @@ def main():
         args.domain, 
         include_subdomains=not args.no_subdomains,
         custom_subdomain_file=args.subdomain_list,
-        skip_rfc_subdomains=args.skip_rfc_subdomains
+        skip_rfc_subdomains=args.skip_rfc_subdomains,
+        max_workers=args.max_workers
     )
     
     # Output results
