@@ -6,7 +6,7 @@
   - Set up command-line argument parsing following dns_dumper.py patterns
   - _Requirements: 4.1, 4.2, 4.3, 4.4_
 
-- [ ] 2. Implement WordSources class for realistic name generation
+- [x] 2. Implement WordSources class for realistic name generation
   - Create WordSources class with embedded word lists for different categories
   - Implement methods for loading and selecting words from categories (nouns, adjectives, business suffixes)
   - Write business name generation logic that combines words in realistic patterns

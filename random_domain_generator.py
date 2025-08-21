@@ -4,6 +4,7 @@ Random Domain Generator - Generate realistic-sounding domain names for testing a
 """
 
 import argparse
+import random
 import sys
 from dataclasses import dataclass
 from typing import Dict, List, Optional
@@ -107,6 +108,168 @@ TLD_WEIGHTS = {
     '.nz': 1,
     '.za': 1
 }
+
+
+class WordSources:
+    """Manages word lists and realistic name generation patterns"""
+    
+    def __init__(self):
+        """Initialize WordSources with embedded word lists"""
+        self.word_lists = self._load_word_lists()
+    
+    def _load_word_lists(self) -> Dict[str, List[str]]:
+        """
+        Load categorized word lists for domain generation
+        
+        Returns:
+            Dictionary mapping category names to word lists
+        """
+        return {
+            WordCategory.NOUNS.value: [
+                'tech', 'data', 'cloud', 'digital', 'systems', 'solutions', 'services',
+                'network', 'security', 'software', 'web', 'mobile', 'app', 'platform',
+                'innovation', 'consulting', 'development', 'design', 'media', 'marketing',
+                'finance', 'health', 'education', 'energy', 'transport', 'logistics',
+                'retail', 'commerce', 'trade', 'business', 'enterprise', 'venture',
+                'startup', 'company', 'corporation', 'agency', 'studio', 'lab',
+                'research', 'analytics', 'intelligence', 'automation', 'robotics',
+                'artificial', 'machine', 'learning', 'blockchain', 'crypto', 'fintech'
+            ],
+            WordCategory.ADJECTIVES.value: [
+                'smart', 'global', 'secure', 'advanced', 'rapid', 'modern', 'dynamic',
+                'innovative', 'professional', 'reliable', 'efficient', 'creative',
+                'strategic', 'premium', 'elite', 'expert', 'leading', 'prime', 'core', 'next',
+                'future', 'digital', 'virtual', 'intelligent', 'automated', 'integrated',
+                'unified', 'optimized', 'enhanced', 'superior', 'ultimate', 'perfect',
+                'instant', 'swift', 'agile', 'flexible', 'scalable', 'robust',
+                'powerful', 'cuttingedge', 'stateoftheart', 'revolutionary', 'breakthrough'
+            ],
+            WordCategory.BUSINESS_SUFFIXES.value: [
+                'tech', 'solutions', 'group', 'corp', 'inc', 'ltd', 'company', 'enterprises',
+                'systems', 'services', 'consulting', 'partners', 'associates', 'ventures',
+                'innovations', 'dynamics', 'works', 'labs', 'studio', 'agency',
+                'collective', 'alliance', 'network', 'hub', 'center', 'institute',
+                'foundation', 'organization', 'cooperative', 'syndicate', 'consortium',
+                'federation', 'union', 'guild', 'society', 'club', 'team', 'crew'
+            ],
+            WordCategory.GERMAN_WORDS.value: [
+                'müller', 'bäcker', 'größe', 'weiß', 'straße', 'büro', 'geschäft',
+                'lösung', 'größer', 'schön', 'grün', 'blau', 'süß', 'heiß', 'kühl',
+                'früh', 'spät', 'neu', 'alt', 'groß', 'klein', 'hoch', 'tief',
+                'stark', 'schwach', 'schnell', 'langsam', 'gut', 'böse', 'reich', 'arm'
+            ]
+        }
+    
+    def get_random_word(self, category: str) -> str:
+        """
+        Get a random word from the specified category
+        
+        Args:
+            category: Word category to select from
+            
+        Returns:
+            Random word from the category
+            
+        Raises:
+            ValueError: If category doesn't exist or is empty
+        """
+        if category not in self.word_lists:
+            raise ValueError(f"Unknown word category: {category}")
+        
+        word_list = self.word_lists[category]
+        if not word_list:
+            raise ValueError(f"Empty word list for category: {category}")
+        
+        return random.choice(word_list)
+    
+    def get_international_words(self, language: str) -> List[str]:
+        """
+        Get words with international characters for specified language
+        
+        Args:
+            language: Language code (e.g., 'german')
+            
+        Returns:
+            List of words with international characters
+            
+        Raises:
+            ValueError: If language is not supported
+        """
+        if language.lower() == 'german':
+            return self.word_lists[WordCategory.GERMAN_WORDS.value]
+        else:
+            raise ValueError(f"Unsupported language: {language}")
+    
+    def generate_business_name(self) -> str:
+        """
+        Generate a realistic business name by combining words in authentic patterns
+        
+        Returns:
+            Generated business name string
+        """
+        # Helper function to clean and combine words
+        def clean_word(word: str) -> str:
+            """Clean word by removing hyphens and spaces for domain use"""
+            return word.replace('-', '').replace(' ', '')
+        
+        # Define realistic business name patterns
+        patterns = [
+            # Single word + suffix (e.g., "TechSolutions")
+            lambda: f"{clean_word(self.get_random_word(WordCategory.NOUNS.value))}{clean_word(self.get_random_word(WordCategory.BUSINESS_SUFFIXES.value))}",
+            
+            # Adjective + noun (e.g., "SmartSystems")
+            lambda: f"{clean_word(self.get_random_word(WordCategory.ADJECTIVES.value))}{clean_word(self.get_random_word(WordCategory.NOUNS.value))}",
+            
+            # Adjective + noun + suffix (e.g., "GlobalTechSolutions")
+            lambda: f"{clean_word(self.get_random_word(WordCategory.ADJECTIVES.value))}{clean_word(self.get_random_word(WordCategory.NOUNS.value))}{clean_word(self.get_random_word(WordCategory.BUSINESS_SUFFIXES.value))}",
+            
+            # Two nouns combined (e.g., "DataCloud")
+            lambda: f"{clean_word(self.get_random_word(WordCategory.NOUNS.value))}{clean_word(self.get_random_word(WordCategory.NOUNS.value))}",
+            
+            # Single noun (e.g., "Innovation")
+            lambda: clean_word(self.get_random_word(WordCategory.NOUNS.value)),
+            
+            # Single adjective + suffix (e.g., "SmartSolutions")
+            lambda: f"{clean_word(self.get_random_word(WordCategory.ADJECTIVES.value))}{clean_word(self.get_random_word(WordCategory.BUSINESS_SUFFIXES.value))}"
+        ]
+        
+        # Select a random pattern and generate the name
+        pattern = random.choice(patterns)
+        business_name = pattern()
+        
+        # Ensure the name is properly formatted (lowercase for domain use)
+        return business_name.lower()
+    
+    def generate_international_business_name(self, language: str) -> str:
+        """
+        Generate a business name using international characters
+        
+        Args:
+            language: Language for international characters
+            
+        Returns:
+            Business name with international characters
+        """
+        if language.lower() == 'german':
+            # German business name patterns
+            patterns = [
+                # German word + tech suffix
+                lambda: f"{random.choice(self.get_international_words('german'))}tech",
+                
+                # German word + solutions
+                lambda: f"{random.choice(self.get_international_words('german'))}solutions",
+                
+                # Pure German word
+                lambda: random.choice(self.get_international_words('german')),
+                
+                # German word + group
+                lambda: f"{random.choice(self.get_international_words('german'))}group"
+            ]
+            
+            pattern = random.choice(patterns)
+            return pattern().lower()
+        else:
+            raise ValueError(f"Unsupported language for international names: {language}")
 
 
 class RandomDomainGenerator:
