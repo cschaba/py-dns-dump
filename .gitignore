@@ -1,0 +1,5 @@
+dns-zones/
+*.zip
+.vscode/
+*.pyc
+.DS_Store
